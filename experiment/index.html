@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Дихотический тест</title>
+<style>
+  :root { --bg:#16181b; --fg:#e9ebee; --muted:#9aa1aa; --accent:#e0a040; --ok:#5fbf83; --bad:#e06a5a; --panel:#1f2226; --line:#30343a; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--fg);
+    font: 18px/1.5 -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+  body { display:flex; align-items:center; justify-content:center; padding:24px; }
+  .screen { width:min(680px, 100%); }
+  .hidden { display:none !important; }
+  h1 { font-size:26px; margin:0 0 12px; }
+  p { margin:0 0 12px; }
+  .muted { color:var(--muted); font-size:15px; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:22px 24px; }
+  label { display:block; margin:14px 0 6px; color:var(--muted); font-size:15px; }
+  input[type=text], select { width:100%; padding:10px 12px; font-size:17px; border-radius:8px;
+    border:1px solid var(--line); background:#111316; color:var(--fg); }
+  .row { display:flex; gap:12px; flex-wrap:wrap; margin-top:18px; }
+  button { font-size:17px; padding:11px 18px; border-radius:8px; border:1px solid var(--line);
+    background:#2a2e34; color:var(--fg); cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#1a1300; font-weight:600; }
+  button:focus-visible, input:focus-visible, select:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  button:disabled { opacity:.45; cursor:default; }
+  .center { text-align:center; }
+  #fixation { font-size:72px; line-height:1; user-select:none; }
+  #feedback { font-size:30px; min-height:44px; margin-top:16px; }
+  .err { color:var(--bad); font-size:15px; min-height:22px; margin-top:8px; }
+  .progress { color:var(--muted); font-size:13px; position:fixed; bottom:12px; right:16px; }
+  kbd { background:#2a2e34; border:1px solid var(--line); border-radius:5px; padding:1px 7px; font-size:16px; }
+</style>
+</head>
+<body>
+
+<!-- 1. Данные участника -->
+<section id="s-setup" class="screen panel">
+  <h1>Дихотический тест</h1>
+  <p class="muted">Заполняет экспериментатор. ФИО не вводится — только анонимный номер.</p>
+  <label for="pid">ID участника</label>
+  <input id="pid" type="text" placeholder="например, P01" autocomplete="off">
+  <label for="hand">Ведущая рука</label>
+  <select id="hand"><option value="right">правая</option><option value="left">левая</option><option value="ambi">обе</option></select>
+  <label for="hearing">Нормальный слух (со слов участника)</label>
+  <select id="hearing"><option value="yes">да</option><option value="no">нет / есть жалобы</option></select>
+  <label for="mode">Режим</label>
+  <select id="mode">
+    <option value="full">Полный — 500 проб (≈14 мин)</option>
+    <option value="debug">Отладка — 20 проб (≈40 с)</option>
+  </select>
+  <div class="err" id="setup-err"></div>
+  <div class="row"><button class="primary" id="btn-setup">Далее</button></div>
+</section>
+
+<!-- 2. Проверка наушников -->
+<section id="s-check" class="screen panel hidden">
+  <h1>Проверка наушников</h1>
+  <p>Наденьте проводные наушники: <b>L</b> — на левое ухо, <b>R</b> — на правое. Нажмите каждую кнопку и убедитесь, что звук слышен <b>только</b> с указанной стороны. Громкость выставьте на комфортный уровень и дальше её не меняйте.</p>
+  <div class="row">
+    <button id="btn-left">▶ Левое ухо</button>
+    <button id="btn-right">▶ Правое ухо</button>
+    <button id="btn-target">▶ Редкий (высокий) тон</button>
+  </div>
+  <p class="muted" style="margin-top:14px">Если звук идёт не с той стороны — проверьте, правильно ли надеты наушники, и что баланс в настройках звука стоит по центру.</p>
+  <div class="row"><button class="primary" id="btn-check-ok">Звук идёт куда нужно, дальше</button></div>
+</section>
+
+<!-- 3. Инструкция -->
+<section id="s-instr" class="screen panel hidden">
+  <h1>Инструкция</h1>
+  <p>Вы услышите серию коротких звуков — то в левом, то в правом ухе.</p>
+  <p>Большинство звуков одинаковые — на них <b>ничего нажимать не нужно</b>.</p>
+  <p>Иногда появляется <b>более высокий</b> звук. Как только его услышите, нажмите <kbd>пробел</kbd> как можно быстрее.</p>
+  <p>Во время теста смотрите на крестик в центре экрана.</p>
+  <p class="muted">Сначала короткая тренировка с подсказками, потом основной блок без подсказок.</p>
+  <div class="row"><button class="primary" id="btn-start-practice">Начать тренировку</button></div>
+</section>
+
+<!-- 4. Между блоками -->
+<section id="s-between" class="screen panel hidden">
+  <h1>Тренировка окончена</h1>
+  <p>Дальше — основной блок. Подсказок больше не будет.</p>
+  <p class="muted" id="between-info"></p>
+  <p>Когда будете готовы, нажмите <kbd>пробел</kbd>.</p>
+</section>
+
+<!-- 5. Проба -->
+<section id="s-trial" class="screen center hidden">
+  <div id="fixation">+</div>
+  <div id="feedback"></div>
+</section>
+
+<!-- 6. Конец -->
+<section id="s-end" class="screen panel hidden">
+  <h1 id="end-title">Спасибо! Эксперимент завершён.</h1>
+  <p id="end-info"></p>
+  <p class="muted">Файл с данными скачан в папку «Загрузки». Если скачивание не сработало, нажмите кнопку ниже.</p>
+  <div class="row">
+    <button class="primary" id="btn-download">Скачать CSV ещё раз</button>
+    <button id="btn-new">Новый участник</button>
+  </div>
+</section>
+
+<div class="progress hidden" id="progress"></div>
+
+<script>
+(() => {
+  'use strict';
+
+  // ================= ПАРАМЕТРЫ =================
+  const CFG = {
+    standardHz: 1000,
+    targetHz: 1800,
+    toneMs: 150,
+    rampMs: 10,
+    amplitude: 0.4,
+    isiRangeS: [1.0, 2.0],      // пауза после окончания тона до следующего тона
+    hitWindowMs: [100, 1000],   // окно засчитанного ответа на целевой тон
+    full:  { targetPerEar: 50, standardPerEar: 200, practicePerEar: { target: 2, standard: 4 } },
+    debug: { targetPerEar: 2,  standardPerEar: 8,   practicePerEar: { target: 1, standard: 2 } },
+  };
+
+  // ================= СОСТОЯНИЕ =================
+  const S = { participant: null, mode: 'full', rows: [], ctx: null, buffers: null,
+              running: false, aborted: false, sessionStart: null, keyLog: [] };
+  window.__exp = S; // для автотестов и отладки из консоли
+
+  const $ = (id) => document.getElementById(id);
+  const screens = ['s-setup','s-check','s-instr','s-between','s-trial','s-end'];
+  function show(id) { screens.forEach(s => $(s).classList.toggle('hidden', s !== id)); }
+
+  // ================= ЗВУК =================
+  function initAudio() {
+    if (S.ctx) return;
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    S.ctx = new Ctx({ latencyHint: 'interactive' });
+    const make = (hz, ear) => {
+      const sr = S.ctx.sampleRate;
+      const n = Math.round(sr * CFG.toneMs / 1000);
+      const ramp = Math.round(sr * CFG.rampMs / 1000);
+      const buf = S.ctx.createBuffer(2, n, sr);
+      const ch = buf.getChannelData(ear === 'left' ? 0 : 1);   // второй канал остаётся тишиной
+      for (let i = 0; i < n; i++) {
+        let env = 1;
+        if (i < ramp) env = i / ramp; else if (i >= n - ramp) env = (n - 1 - i) / ramp;
+        ch[i] = CFG.amplitude * env * Math.sin(2 * Math.PI * hz * i / sr);
+      }
+      return buf;
+    };
+    S.buffers = {
+      'left|standard':  make(CFG.standardHz, 'left'),
+      'right|standard': make(CFG.standardHz, 'right'),
+      'left|target':    make(CFG.targetHz, 'left'),
+      'right|target':   make(CFG.targetHz, 'right'),
+    };
+  }
+
+  // Запускает тон и возвращает момент его начала в шкале performance.now() (мс)
+  function playTone(ear, type) {
+    const ctx = S.ctx;
+    const src = ctx.createBufferSource();
+    src.buffer = S.buffers[ear + '|' + type];
+    src.connect(ctx.destination);
+    const startAt = ctx.currentTime + 0.05;   // небольшой запас, чтобы старт был точно по расписанию
+    src.start(startAt);
+    let onsetPerf;
+    if (ctx.getOutputTimestamp) {
+      const ts = ctx.getOutputTimestamp();     // связывает часы аудио с часами performance (с учётом задержки вывода)
+      if (ts && ts.performanceTime > 0) onsetPerf = ts.performanceTime + (startAt - ts.contextTime) * 1000;
+    }
+    if (onsetPerf === undefined) onsetPerf = performance.now() + (startAt - ctx.currentTime) * 1000 + (ctx.outputLatency || 0) * 1000;
+    return onsetPerf;
+  }
+
+  // ================= СПИСОК ПРОБ =================
+  function shuffle(a) {
+    for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+    return a;
+  }
+  function buildTrials(targetPerEar, standardPerEar) {
+    const t = [];
+    for (const ear of ['left', 'right']) {
+      for (let i = 0; i < targetPerEar; i++) t.push({ ear, type: 'target' });
+      for (let i = 0; i < standardPerEar; i++) t.push({ ear, type: 'standard' });
+    }
+    return shuffle(t);
+  }
+
+  // ================= КЛАВИАТУРА =================
+  let pending = null; // текущая проба, ожидающая ответа
+  document.addEventListener('keydown', (e) => {
+    if (!S.running) return;
+    if (e.code === 'Escape') { S.aborted = true; return; }
+    if (e.code !== 'Space' || e.repeat) return;
+    e.preventDefault();
+    S.keyLog.push(e.timeStamp);
+    if (pending) {
+      pending.presses += 1;
+      if (pending.firstPress === null) pending.firstPress = e.timeStamp;
+    }
+  });
+
+  const wait = (ms) => new Promise(r => setTimeout(r, ms));
+
+  // ================= БЛОК =================
+  async function runBlock(trials, blockName, withFeedback) {
+    show('s-trial');
+    const prog = $('progress');
+    prog.classList.toggle('hidden', blockName !== 'main');
+    $('feedback').textContent = '';
+    await wait(800);
+
+    for (let k = 0; k < trials.length; k++) {
+      if (S.aborted) break;
+      const tr = trials[k];
+      const isiS = CFG.isiRangeS[0] + Math.random() * (CFG.isiRangeS[1] - CFG.isiRangeS[0]);
+      pending = { presses: 0, firstPress: null };
+      const onset = playTone(tr.ear, tr.type);
+      S.current = { k, block: blockName, ear: tr.ear, type: tr.type, onset };
+      const trialEnd = onset + CFG.toneMs + isiS * 1000;
+      while (performance.now() < trialEnd && !S.aborted) await wait(5);
+      const p = pending; pending = null;
+
+      const responded = p.firstPress !== null;
+      const rt = responded ? p.firstPress - onset : null;
+      let outcome;
+      if (tr.type === 'target') {
+        outcome = (responded && rt >= CFG.hitWindowMs[0] && rt <= CFG.hitWindowMs[1]) ? 'hit' : (responded ? 'late_or_early' : 'miss');
+      } else {
+        outcome = responded ? 'false_alarm' : 'correct_rejection';
+      }
+      const correct = outcome === 'hit' || outcome === 'correct_rejection';
+
+      S.rows.push({
+        participant_id: S.participant.id, handedness: S.participant.hand, hearing_ok: S.participant.hearing,
+        mode: S.mode, session_start: S.sessionStart, block: blockName, trial_index: k + 1,
+        ear: tr.ear, trial_type: tr.type, freq_hz: tr.type === 'target' ? CFG.targetHz : CFG.standardHz,
+        isi_s: isiS.toFixed(3), onset_ms: onset.toFixed(2),
+        responded: responded ? 1 : 0, rt_ms: responded ? rt.toFixed(2) : '', n_presses: p.presses,
+        outcome, correct: correct ? 1 : 0,
+        audio_output_latency_ms: ((S.ctx.outputLatency || 0) * 1000).toFixed(1),
+        audio_base_latency_ms: ((S.ctx.baseLatency || 0) * 1000).toFixed(1),
+      });
+      backup();
+
+      if (blockName === 'main') prog.textContent = (k + 1) + ' / ' + trials.length;
+      if (withFeedback && (tr.type === 'target' || responded)) {
+        const fb = $('feedback');
+        fb.textContent = correct ? 'Верно' : (tr.type === 'target' ? 'Пропущен высокий звук' : 'Это был обычный звук');
+        fb.style.color = correct ? 'var(--ok)' : 'var(--bad)';
+        await wait(700);
+        fb.textContent = '';
+      }
+    }
+    prog.classList.add('hidden');
+  }
+
+  // ================= СОХРАНЕНИЕ =================
+  const COLS = ['participant_id','handedness','hearing_ok','mode','session_start','block','trial_index','ear','trial_type','freq_hz',
+    'isi_s','onset_ms','responded','rt_ms','n_presses','outcome','correct','audio_output_latency_ms','audio_base_latency_ms'];
+  function toCSV() {
+    const esc = v => { const s = String(v ?? ''); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+    return [COLS.join(','), ...S.rows.map(r => COLS.map(c => esc(r[c])).join(','))].join('\n') + '\n';
+  }
+  function fileName() {
+    const d = new Date(), z = n => String(n).padStart(2, '0');
+    const stamp = d.getFullYear() + z(d.getMonth() + 1) + z(d.getDate()) + '_' + z(d.getHours()) + z(d.getMinutes()) + z(d.getSeconds());
+    return (S.participant.id || 'participant') + '_' + S.mode + '_' + stamp + (S.aborted ? '_ABORTED' : '') + '.csv';
+  }
+  function download() {
+    const blob = new Blob(['﻿' + toCSV()], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = S.lastFileName || (S.lastFileName = fileName());
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  }
+  function backup() {   // страховка: копия данных в браузере на случай сбоя
+    try { localStorage.setItem('dichotic_backup_' + S.participant.id + '_' + S.sessionStart, toCSV()); } catch (e) {}
+  }
+
+  // ================= ХОД ЭКСПЕРИМЕНТА =================
+  $('btn-setup').onclick = () => {
+    const id = $('pid').value.trim();
+    if (!/^[A-Za-z0-9_\-]{1,20}$/.test(id)) { $('setup-err').textContent = 'Введите ID латиницей и цифрами, без пробелов (например, P01).'; return; }
+    $('setup-err').textContent = '';
+    S.participant = { id, hand: $('hand').value, hearing: $('hearing').value };
+    S.mode = $('mode').value;
+    S.sessionStart = new Date().toISOString();
+    initAudio();
+    S.ctx.resume();
+    show('s-check');
+  };
+  $('btn-left').onclick   = () => { S.ctx.resume(); playTone('left', 'standard'); };
+  $('btn-right').onclick  = () => { S.ctx.resume(); playTone('right', 'standard'); };
+  $('btn-target').onclick = () => { S.ctx.resume(); playTone('left', 'target'); setTimeout(() => playTone('right', 'target'), 600); };
+  $('btn-check-ok').onclick = () => show('s-instr');
+
+  $('btn-start-practice').onclick = async () => {
+    const cfg = CFG[S.mode];
+    try { if (S.mode === 'full' && document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen(); } catch (e) {}
+    document.activeElement && document.activeElement.blur();
+    S.running = true;
+    await runBlock(buildTrials(cfg.practicePerEar.target, cfg.practicePerEar.standard), 'practice', true);
+    if (S.aborted) return finish();
+
+    S.running = false;
+    show('s-between');
+    $('between-info').textContent = S.mode === 'full' ? 'Он займёт около 14 минут.' : 'Режим отладки: 20 проб.';
+    await new Promise(res => {
+      const h = e => { if (e.code === 'Space') { e.preventDefault(); document.removeEventListener('keydown', h); res(); } };
+      document.addEventListener('keydown', h);
+    });
+    S.running = true;
+    await runBlock(buildTrials(cfg.targetPerEar, cfg.standardPerEar), 'main', false);
+    finish();
+  };
+
+  function finish() {
+    S.running = false; pending = null;
+    try { if (document.fullscreenElement) document.exitFullscreen(); } catch (e) {}
+    const main = S.rows.filter(r => r.block === 'main');
+    const targets = main.filter(r => r.trial_type === 'target');
+    const hits = targets.filter(r => r.outcome === 'hit').length;
+    const fas = main.filter(r => r.outcome === 'false_alarm').length;
+    $('end-title').textContent = S.aborted ? 'Эксперимент прерван (Esc)' : 'Спасибо! Эксперимент завершён.';
+    $('end-info').textContent = 'Основной блок: ' + main.length + ' проб, попаданий ' + hits + ' из ' + targets.length + ', ложных тревог ' + fas + '.';
+    show('s-end');
+    S.lastFileName = fileName();
+    download();
+  }
+  $('btn-download').onclick = download;
+  $('btn-new').onclick = () => location.reload();
+})();
+</script>
+</body>
+</html>
